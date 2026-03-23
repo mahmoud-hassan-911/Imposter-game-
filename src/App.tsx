@@ -412,7 +412,7 @@ export default function App() {
                 animate={{ rotate: [0, 5, -5, 0] }}
                 transition={{ duration: 6, repeat: Infinity }}
               >
-                <img src="/logo.png" alt="الجاسوس" className="w-64 h-auto mx-auto drop-shadow-2xl" />
+                <img src={`${import.meta.env.BASE_URL}logo.png`} alt="الجاسوس" className="w-64 h-auto mx-auto drop-shadow-2xl" />
               </motion.div>
               <p className="text-slate-500 font-bold text-lg">لعبة الأصحاب واللمة الحلوة</p>
             </div>
