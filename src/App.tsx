@@ -26,8 +26,9 @@ import {
 import confetti from 'canvas-confetti';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Player, GamePhase, Word, Category } from './types';
-import { DEFAULT_CATEGORIES } from './constants';
+import { Player, GamePhase, Word, Category, Punishment } from './types';
+import { DEFAULT_CATEGORIES, DEFAULT_PUNISHMENTS } from './constants';
+import { playClick, playSuccess, playFail, playReveal } from './utils/sound';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -87,9 +88,30 @@ export default function App() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [newWordText, setNewWordText] = useState('');
 
+  // Punishment State
+  const [punishments, setPunishments] = useState<Punishment[]>(() => {
+    try {
+      const saved = localStorage.getItem('spy_punishments');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return DEFAULT_PUNISHMENTS;
+  });
+  const [punishmentMode, setPunishmentMode] = useState<'random' | 'players'>(() => {
+    return (localStorage.getItem('spy_punishment_mode') as 'random' | 'players') || 'random';
+  });
+  const [spyGuessOptions, setSpyGuessOptions] = useState<Word[]>([]);
+  const [selectedPunishment, setSelectedPunishment] = useState<Punishment | null>(null);
+  const [guessingSpy, setGuessingSpy] = useState<Player | null>(null);
+  const [settingsTab, setSettingsTab] = useState<'categories' | 'punishments'>('categories');
+  const [newPunishmentText, setNewPunishmentText] = useState('');
+
   useEffect(() => {
     localStorage.setItem('spy_categories', JSON.stringify(categories));
   }, [categories]);
+
+  useEffect(() => {
+    localStorage.setItem('spy_punishments', JSON.stringify(punishments));
+  }, [punishments]);
 
   useEffect(() => {
     const maxSpies = Math.max(1, Math.floor(players.length / 3));
@@ -99,6 +121,7 @@ export default function App() {
   }, [players.length]);
 
   const addPlayer = () => {
+    playClick();
     if (newPlayerName.trim() && players.length < 12) {
       setPlayers([
         ...players,
@@ -115,16 +138,19 @@ export default function App() {
   };
 
   const removePlayer = (id: string) => {
+    playClick();
     setPlayers(players.filter((p) => p.id !== id));
   };
 
   const toggleCategory = (id: string) => {
+    playClick();
     setSelectedCategoryIds(prev => 
       prev.includes(id) ? prev.filter(cId => cId !== id) : [...prev, id]
     );
   };
 
   const startGame = () => {
+    playClick();
     if (selectedCategoryIds.length === 0) return;
     
     const combinedWords = categories
@@ -234,12 +260,20 @@ export default function App() {
     const activeCitizens = activePlayers.filter(p => p.role === 'citizen');
 
     if (activeSpies.length === 0) {
-      setWinner('citizens');
-      setPhase('result');
-      confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+      // Citizens caught the spy! Now spy gets a chance to guess the word.
+      const eliminatedSpies = currentPlayers.filter(p => p.role === 'spy' && p.isEliminated);
+      if (eliminatedSpies.length > 0) {
+        startSpyGuessPhase(eliminatedSpies[0]);
+      } else {
+        setWinner('citizens');
+        setPhase('result');
+        playSuccess();
+        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+      }
     } else if (activeSpies.length >= activeCitizens.length) {
       setWinner('spy');
       setPhase('result');
+      playFail();
     } else {
       if (discussionMode === 'directed') {
         startQuestionPhase(currentPlayers);
@@ -297,6 +331,60 @@ export default function App() {
   const deleteCategory = (id: string) => {
     setCategories(categories.filter(c => c.id !== id));
     if (editingCategory?.id === id) setEditingCategory(null);
+  };
+
+  const addPunishment = () => {
+    if (!newPunishmentText.trim()) return;
+    const newPunishment: Punishment = {
+      id: Math.random().toString(36).substr(2, 9),
+      text: newPunishmentText.trim(),
+      isCustom: true
+    };
+    setPunishments([...punishments, newPunishment]);
+    setNewPunishmentText('');
+  };
+
+  const deletePunishment = (id: string) => {
+    setPunishments(punishments.filter(p => p.id !== id));
+  };
+
+  const startSpyGuessPhase = (spyPlayer: Player) => {
+    const possibleWords = categories
+      .filter(c => selectedCategoryIds.includes(c.id))
+      .flatMap(c => c.words);
+    
+    let options = [...possibleWords];
+    if (options.length > 5) {
+        const others = options.filter(w => w.id !== currentWord?.id).sort(() => Math.random() - 0.5).slice(0, 4);
+        options = [currentWord!, ...others].sort(() => Math.random() - 0.5);
+    } else {
+        options = options.sort(() => Math.random() - 0.5);
+    }
+    
+    setGuessingSpy(spyPlayer);
+    setSpyGuessOptions(options);
+    setPhase('spy-guess');
+  };
+
+  const handleSpyGuess = (wordId: string) => {
+    if (wordId === currentWord?.id) {
+      playFail(); // Spy wins
+      setWinner('spy');
+      setPhase('result');
+    } else {
+      startPunishmentPhase();
+    }
+  };
+
+  const startPunishmentPhase = () => {
+    if (punishmentMode === 'random') {
+      const randomPunishment = punishments[Math.floor(Math.random() * punishments.length)];
+      setSelectedPunishment(randomPunishment);
+    } else {
+      setSelectedPunishment(null);
+    }
+    setPhase('punishment');
+    playFail();
   };
 
   return (
@@ -483,11 +571,13 @@ export default function App() {
                 <button onClick={() => { setPhase('setup'); setEditingCategory(null); }} className="btn-chunky btn-secondary p-3">
                   <ChevronLeft size={24} strokeWidth={3} />
                 </button>
-                <h2 className="text-2xl font-black text-slate-900">التصنيفات ⚙️</h2>
+                <h2 className="text-2xl font-black text-slate-900">الإعدادات ⚙️</h2>
               </div>
-              <button onClick={addNewCategory} className="btn-chunky btn-primary px-4 py-2 text-sm">
-                <Plus size={20} strokeWidth={3} /> جديد
-              </button>
+              {settingsTab === 'categories' && !editingCategory && (
+                <button onClick={addNewCategory} className="btn-chunky btn-primary px-4 py-2 text-sm">
+                  <Plus size={20} strokeWidth={3} /> تصنيف جديد
+                </button>
+              )}
             </div>
 
             {!editingCategory ? (
@@ -513,33 +603,91 @@ export default function App() {
                       </button>
                     </div>
                   </div>
+                  <div className="space-y-3 pt-2">
+                    <label className="text-sm font-black text-slate-400 uppercase">طريقة الحكم على الجاسوس</label>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => { setPunishmentMode('random'); localStorage.setItem('spy_punishment_mode', 'random'); }}
+                        className={cn("flex-1 py-3 rounded-xl font-bold border-2 transition-all", punishmentMode === 'random' ? "bg-indigo-50 border-indigo-500 text-indigo-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300")}
+                      >
+                        عشوائي
+                      </button>
+                      <button 
+                        onClick={() => { setPunishmentMode('players'); localStorage.setItem('spy_punishment_mode', 'players'); }}
+                        className={cn("flex-1 py-3 rounded-xl font-bold border-2 transition-all", punishmentMode === 'players' ? "bg-indigo-50 border-indigo-500 text-indigo-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300")}
+                      >
+                        تصويت اللاعبين
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-3">
-                  <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 px-1">
-                    التصنيفات
-                  </h3>
-                  {categories.map(cat => (
-                  <div 
-                    key={cat.id}
-                    onClick={() => setEditingCategory(cat)}
-                    className="card-chunky p-5 cursor-pointer hover:border-indigo-300 transition-all flex items-center justify-between"
+                <div className="flex gap-2 mb-4">
+                  <button 
+                    onClick={() => setSettingsTab('categories')}
+                    className={cn("flex-1 py-3 rounded-xl font-black transition-all", settingsTab === 'categories' ? "bg-slate-800 text-white shadow-md" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
                   >
-                    <div>
-                      <div className="font-black text-xl text-slate-800">{cat.name}</div>
-                      <div className="text-sm font-bold text-slate-400">{cat.words.length} كلمة</div>
-                    </div>
-                    {cat.isCustom && (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); deleteCategory(cat.id); }}
-                        className="w-10 h-10 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-100 transition-colors"
-                      >
-                        <Trash2 size={20} strokeWidth={2.5} />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                    التصنيفات
+                  </button>
+                  <button 
+                    onClick={() => setSettingsTab('punishments')}
+                    className={cn("flex-1 py-3 rounded-xl font-black transition-all", settingsTab === 'punishments' ? "bg-slate-800 text-white shadow-md" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
+                  >
+                    الأحكام
+                  </button>
                 </div>
+
+                {settingsTab === 'categories' && (
+                  <div className="space-y-3">
+                    {categories.map(cat => (
+                    <div 
+                      key={cat.id}
+                      onClick={() => setEditingCategory(cat)}
+                      className="card-chunky p-5 cursor-pointer hover:border-indigo-300 transition-all flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="font-black text-xl text-slate-800">{cat.name}</div>
+                        <div className="text-sm font-bold text-slate-400">{cat.words.length} كلمة</div>
+                      </div>
+                      {cat.isCustom && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); deleteCategory(cat.id); }}
+                          className="w-10 h-10 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-100 transition-colors"
+                        >
+                          <Trash2 size={20} strokeWidth={2.5} />
+                        </button>
+                      )}
+                    </div>
+                    ))}
+                  </div>
+                )}
+
+                {settingsTab === 'punishments' && (
+                  <div className="space-y-3">
+                    <div className="flex gap-2 mb-4">
+                      <input 
+                        placeholder="ضيف حكم جديد..."
+                        value={newPunishmentText}
+                        onChange={(e) => setNewPunishmentText(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && addPunishment()}
+                        className="input-chunky flex-1 text-base py-2"
+                      />
+                      <button onClick={addPunishment} className="btn-chunky btn-primary px-4">
+                        <Plus size={20} strokeWidth={3} />
+                      </button>
+                    </div>
+                    {punishments.map(p => (
+                      <div key={p.id} className="flex items-center justify-between bg-white p-4 rounded-2xl border-2 border-slate-200 shadow-sm">
+                        <span className="font-bold text-lg text-slate-700 leading-tight">{p.text}</span>
+                        {p.isCustom && (
+                          <button onClick={() => deletePunishment(p.id)} className="text-slate-300 hover:text-rose-500 p-2 shrink-0">
+                            <Trash2 size={20} strokeWidth={2.5} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="card-chunky space-y-6">
@@ -837,6 +985,95 @@ export default function App() {
                 </button>
               </div>
             )}
+          </motion.div>
+        )}
+
+        {phase === 'spy-guess' && (
+          <motion.div
+            key="spy-guess"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md space-y-8"
+          >
+            <div className="text-center space-y-4">
+              <motion.div 
+                className="inline-block p-6 rounded-[2.5rem] bg-rose-100 text-rose-500 mb-2 shadow-sm"
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                <Ghost size={64} strokeWidth={2.5} />
+              </motion.div>
+              <h2 className="text-4xl font-black text-slate-900">الجاسوس اتكشف! 🕵️‍♂️</h2>
+              <p className="text-xl text-slate-500 font-bold leading-relaxed">
+                يا <span className="text-rose-600">{guessingSpy?.name}</span>، قدامك فرصة أخيرة.. إيه هي الكلمة؟
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 max-h-[50vh] overflow-y-auto p-2">
+              {spyGuessOptions.map((word) => (
+                <button
+                  key={word.id}
+                  onClick={() => handleSpyGuess(word.id)}
+                  className="card-chunky p-4 text-center hover:border-indigo-300 hover:bg-indigo-50 transition-all active:scale-95"
+                >
+                  <span className="font-black text-lg text-slate-800">{word.text}</span>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {phase === 'punishment' && (
+          <motion.div
+            key="punishment"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="w-full max-w-md space-y-8 text-center"
+          >
+            <div className="space-y-4">
+              <motion.div 
+                className="inline-block p-6 rounded-[2.5rem] bg-rose-100 text-rose-600 mb-4 shadow-sm border-4 border-rose-200"
+                animate={{ rotate: [-5, 5, -5] }}
+                transition={{ duration: 0.5, repeat: Infinity }}
+              >
+                <AlertCircle size={80} strokeWidth={2.5} />
+              </motion.div>
+              <h2 className="text-5xl font-black text-slate-900 leading-tight">إجابة غلط! ❌</h2>
+              <p className="text-xl text-slate-500 font-bold">
+                الجاسوس معرفش الكلمة.. وقت العقاب!
+              </p>
+            </div>
+
+            <div className="card-chunky p-8 space-y-6 bg-gradient-to-br from-rose-50 to-orange-50 border-rose-200">
+              <h3 className="text-sm font-black text-rose-400 uppercase tracking-[0.2em]">الحكم التنفيذي</h3>
+              
+              {punishmentMode === 'random' && selectedPunishment ? (
+                <div className="text-3xl font-black text-slate-800 leading-relaxed">
+                  "{selectedPunishment.text}"
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="text-2xl font-black text-slate-800 leading-relaxed">
+                    اللاعبين هيختاروا الحكم بالأغلبية!
+                  </div>
+                  <div className="text-slate-500 font-bold">
+                    اتفقوا على حكم ونفذوه في الجاسوس 😈
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => {
+                setWinner('citizens');
+                setPhase('result');
+                playSuccess();
+                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+              }}
+              className="btn-chunky btn-primary w-full py-5 text-2xl"
+            >
+              النتيجة النهائية 🏆
+            </button>
           </motion.div>
         )}
 
