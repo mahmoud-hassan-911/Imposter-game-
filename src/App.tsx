@@ -73,9 +73,13 @@ export default function App() {
   const [winner, setWinner] = useState<'citizens' | 'spy' | null>(null);
 
   // New Question & Voting State
+  const [discussionMode, setDiscussionMode] = useState<'open' | 'directed'>(() => {
+    return (localStorage.getItem('spy_discussion_mode') as 'open' | 'directed') || 'directed';
+  });
   const [questionPairs, setQuestionPairs] = useState<{asker: Player, answerer: Player}[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [votes, setVotes] = useState<Record<string, string>>({});
+  const [votes, setVotes] = useState<Record<string, string[]>>({});
+  const [currentVoterSelections, setCurrentVoterSelections] = useState<string[]>([]);
   const [currentVoterIndex, setCurrentVoterIndex] = useState(0);
   const [showVoterPrompt, setShowVoterPrompt] = useState(true);
 
@@ -169,16 +173,31 @@ export default function App() {
       setRevealIndex(revealIndex + 1);
       setIsWordVisible(false);
     } else {
-      startQuestionPhase(players);
+      if (discussionMode === 'directed') {
+        startQuestionPhase(players);
+      } else {
+        setPhase('describe');
+      }
     }
   };
 
-  const handleCastVote = (suspectId: string) => {
+  const toggleSelection = (suspectId: string) => {
+    setCurrentVoterSelections(prev => 
+      prev.includes(suspectId) 
+        ? prev.filter(id => id !== suspectId)
+        : prev.length < spyCount 
+          ? [...prev, suspectId] 
+          : prev
+    );
+  };
+
+  const confirmVote = () => {
     const activePlayers = players.filter(p => !p.isEliminated);
     const currentVoter = activePlayers[currentVoterIndex];
     
-    const newVotes = { ...votes, [currentVoter.id]: suspectId };
+    const newVotes = { ...votes, [currentVoter.id]: currentVoterSelections };
     setVotes(newVotes);
+    setCurrentVoterSelections([]);
 
     if (currentVoterIndex < activePlayers.length - 1) {
       setCurrentVoterIndex(currentVoterIndex + 1);
@@ -188,23 +207,18 @@ export default function App() {
     }
   };
 
-  const resolveVotesInline = (finalVotes: Record<string, string>) => {
+  const resolveVotesInline = (finalVotes: Record<string, string[]>) => {
     const tally: Record<string, number> = {};
-    Object.values(finalVotes).forEach(votedId => {
+    Object.values(finalVotes).flat().forEach(votedId => {
       tally[votedId] = (tally[votedId] || 0) + 1;
     });
 
-    let maxVotes = 0;
-    let eliminatedIds: string[] = [];
-
-    Object.entries(tally).forEach(([id, count]) => {
-      if (count > maxVotes) {
-        maxVotes = count;
-        eliminatedIds = [id];
-      } else if (count === maxVotes) {
-        eliminatedIds.push(id);
-      }
-    });
+    const sortedCandidates = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+    const thresholdVoteCount = sortedCandidates[Math.min(spyCount, sortedCandidates.length) - 1]?.[1] || 0;
+    
+    const eliminatedIds = sortedCandidates
+      .filter(([id, count]) => count >= thresholdVoteCount)
+      .map(([id]) => id);
 
     const updatedPlayers = players.map(p => 
       eliminatedIds.includes(p.id) ? { ...p, isEliminated: true } : p
@@ -227,7 +241,11 @@ export default function App() {
       setWinner('spy');
       setPhase('result');
     } else {
-      startQuestionPhase(currentPlayers);
+      if (discussionMode === 'directed') {
+        startQuestionPhase(currentPlayers);
+      } else {
+        setPhase('describe');
+      }
     }
   };
 
@@ -473,8 +491,35 @@ export default function App() {
             </div>
 
             {!editingCategory ? (
-              <div className="space-y-3 max-h-[70vh] overflow-y-auto">
-                {categories.map(cat => (
+              <div className="space-y-6 max-h-[70vh] overflow-y-auto pb-8">
+                <div className="card-chunky p-5 space-y-4">
+                  <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                    <Settings size={24} className="text-indigo-500"/> إعدادات اللعبة
+                  </h3>
+                  <div className="space-y-3">
+                    <label className="text-sm font-black text-slate-400 uppercase">طريقة النقاش</label>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => { setDiscussionMode('directed'); localStorage.setItem('spy_discussion_mode', 'directed'); }}
+                        className={cn("flex-1 py-3 rounded-xl font-bold border-2 transition-all", discussionMode === 'directed' ? "bg-indigo-50 border-indigo-500 text-indigo-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300")}
+                      >
+                        أسئلة موجهة
+                      </button>
+                      <button 
+                        onClick={() => { setDiscussionMode('open'); localStorage.setItem('spy_discussion_mode', 'open'); }}
+                        className={cn("flex-1 py-3 rounded-xl font-bold border-2 transition-all", discussionMode === 'open' ? "bg-indigo-50 border-indigo-500 text-indigo-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300")}
+                      >
+                        نقاش مفتوح
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 px-1">
+                    التصنيفات
+                  </h3>
+                  {categories.map(cat => (
                   <div 
                     key={cat.id}
                     onClick={() => setEditingCategory(cat)}
@@ -494,6 +539,7 @@ export default function App() {
                     )}
                   </div>
                 ))}
+                </div>
               </div>
             ) : (
               <div className="card-chunky space-y-6">
@@ -619,57 +665,96 @@ export default function App() {
           </motion.div>
         )}
 
-        {phase === 'describe' && questionPairs.length > 0 && (
+        {phase === 'describe' && (
           <motion.div
             key="describe"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="w-full max-w-md space-y-8"
           >
-            <div className="text-center space-y-3">
-              <h2 className="text-4xl font-black text-slate-900">وقت الأسئلة! 🗣️</h2>
-              <p className="text-slate-500 font-bold text-lg">اسألوا بعض عشان تكشفوا الجاسوس</p>
-            </div>
+            {discussionMode === 'directed' && questionPairs.length > 0 ? (
+              <>
+                <div className="text-center space-y-3">
+                  <h2 className="text-4xl font-black text-slate-900">وقت الأسئلة! 🗣️</h2>
+                  <p className="text-slate-500 font-bold text-lg">اسألوا بعض عشان تكشفوا الجواسيس</p>
+                </div>
 
-            <div className="card-chunky p-8 flex flex-col items-center gap-6 text-center">
-              <div className="flex items-center justify-center gap-4 w-full">
-                <div className="flex flex-col items-center gap-2 flex-1">
-                  <div className="w-16 h-16 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                    <User size={32} strokeWidth={2.5} />
+                <div className="card-chunky p-8 flex flex-col items-center gap-6 text-center">
+                  <div className="flex items-center justify-center gap-4 w-full">
+                    <div className="flex flex-col items-center gap-2 flex-1">
+                      <div className="w-16 h-16 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                        <User size={32} strokeWidth={2.5} />
+                      </div>
+                      <span className="font-black text-xl text-slate-800">{questionPairs[currentQuestionIndex].asker.name}</span>
+                      <span className="text-sm font-bold text-slate-400">يسأل</span>
+                    </div>
+                    
+                    <div className="text-slate-300">
+                      <ChevronLeft size={40} strokeWidth={3} />
+                    </div>
+
+                    <div className="flex flex-col items-center gap-2 flex-1">
+                      <div className="w-16 h-16 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center">
+                        <User size={32} strokeWidth={2.5} />
+                      </div>
+                      <span className="font-black text-xl text-slate-800">{questionPairs[currentQuestionIndex].answerer.name}</span>
+                      <span className="text-sm font-bold text-slate-400">يُسأل</span>
+                    </div>
                   </div>
-                  <span className="font-black text-xl text-slate-800">{questionPairs[currentQuestionIndex].asker.name}</span>
-                  <span className="text-sm font-bold text-slate-400">يسأل</span>
-                </div>
-                
-                <div className="text-slate-300">
-                  <ChevronLeft size={40} strokeWidth={3} />
                 </div>
 
-                <div className="flex flex-col items-center gap-2 flex-1">
-                  <div className="w-16 h-16 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center">
-                    <User size={32} strokeWidth={2.5} />
-                  </div>
-                  <span className="font-black text-xl text-slate-800">{questionPairs[currentQuestionIndex].answerer.name}</span>
-                  <span className="text-sm font-bold text-slate-400">يُسأل</span>
+                <button
+                  onClick={() => {
+                    if (currentQuestionIndex < questionPairs.length - 1) {
+                      setCurrentQuestionIndex(currentQuestionIndex + 1);
+                    } else {
+                      setPhase('vote');
+                      setVotes({});
+                      setCurrentVoterIndex(0);
+                      setShowVoterPrompt(true);
+                      setCurrentVoterSelections([]);
+                    }
+                  }}
+                  className="btn-chunky btn-primary w-full py-5 text-2xl"
+                >
+                  {currentQuestionIndex < questionPairs.length - 1 ? 'السؤال اللي بعده' : 'خلصنا؟ يلا نصوت! 🗳️'}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="text-center space-y-3">
+                  <h2 className="text-4xl font-black text-slate-900">نقاش مفتوح! 🗣️</h2>
+                  <p className="text-slate-500 font-bold text-lg">اتكلموا مع بعض وحاولوا تكتشفوا الجواسيس</p>
                 </div>
-              </div>
-            </div>
 
-            <button
-              onClick={() => {
-                if (currentQuestionIndex < questionPairs.length - 1) {
-                  setCurrentQuestionIndex(currentQuestionIndex + 1);
-                } else {
-                  setPhase('vote');
-                  setVotes({});
-                  setCurrentVoterIndex(0);
-                  setShowVoterPrompt(true);
-                }
-              }}
-              className="btn-chunky btn-primary w-full py-5 text-2xl"
-            >
-              {currentQuestionIndex < questionPairs.length - 1 ? 'السؤال اللي بعده' : 'خلصنا؟ يلا نصوت! 🗳️'}
-            </button>
+                <div className="grid grid-cols-2 gap-4">
+                  {players.filter(p => !p.isEliminated).map((player) => (
+                    <div
+                      key={player.id}
+                      className="card-chunky p-5 flex flex-col items-center gap-3"
+                    >
+                      <div className="w-16 h-16 rounded-[1.5rem] bg-indigo-50 flex items-center justify-center text-indigo-600">
+                        <User size={32} strokeWidth={2.5} />
+                      </div>
+                      <span className="font-black text-xl truncate w-full text-center text-slate-800">{player.name}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => {
+                    setPhase('vote');
+                    setVotes({});
+                    setCurrentVoterIndex(0);
+                    setShowVoterPrompt(true);
+                    setCurrentVoterSelections([]);
+                  }}
+                  className="btn-chunky btn-primary w-full py-5 text-2xl"
+                >
+                  خلصنا نقاش؟ يلا نصوت! 🗳️
+                </button>
+              </>
+            )}
           </motion.div>
         )}
 
@@ -702,26 +787,54 @@ export default function App() {
               <div className="space-y-6">
                 <div className="text-center space-y-3">
                   <h2 className="text-3xl font-black text-slate-900">شاكك في مين؟ 🤔</h2>
-                  <p className="text-slate-500 font-bold">اختار اللاعب اللي حاسس إنه الجاسوس</p>
+                  <p className="text-slate-500 font-bold">اختار {spyCount} لاعبين حاسس إنهم جواسيس</p>
+                  <p className="text-indigo-500 font-black text-sm bg-indigo-50 inline-block px-4 py-1 rounded-full">
+                    اخترت {currentVoterSelections.length} من {spyCount}
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3">
-                  {players.filter(p => !p.isEliminated && p.id !== players.filter(active => !active.isEliminated)[currentVoterIndex]?.id).map((player) => (
-                    <button
-                      key={player.id}
-                      onClick={() => handleCastVote(player.id)}
-                      className="card-chunky p-5 flex items-center justify-between group hover:border-rose-300 transition-all text-right active:scale-[0.98] cursor-pointer"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center group-hover:bg-rose-100 transition-colors">
-                          <AlertCircle size={24} className="text-slate-400 group-hover:text-rose-500 transition-colors" strokeWidth={2.5} />
+                  {players.filter(p => !p.isEliminated && p.id !== players.filter(active => !active.isEliminated)[currentVoterIndex]?.id).map((player) => {
+                    const isSelected = currentVoterSelections.includes(player.id);
+                    return (
+                      <button
+                        key={player.id}
+                        onClick={() => toggleSelection(player.id)}
+                        className={cn(
+                          "card-chunky p-5 flex items-center justify-between transition-all text-right active:scale-[0.98] cursor-pointer",
+                          isSelected ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20" : "hover:border-rose-300 group"
+                        )}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={cn(
+                            "w-12 h-12 rounded-xl flex items-center justify-center transition-colors",
+                            isSelected ? "bg-indigo-500 text-white" : "bg-slate-50 text-slate-400 group-hover:bg-rose-100 group-hover:text-rose-500"
+                          )}>
+                            {isSelected ? <Check size={24} strokeWidth={3} /> : <AlertCircle size={24} strokeWidth={2.5} />}
+                          </div>
+                          <span className="text-xl font-black text-slate-800">{player.name}</span>
                         </div>
-                        <span className="text-xl font-black text-slate-800">{player.name}</span>
-                      </div>
-                      <div className="text-slate-300 group-hover:text-rose-500 font-black">صوّت ضده</div>
-                    </button>
-                  ))}
+                        <div className={cn(
+                          "font-black transition-colors",
+                          isSelected ? "text-indigo-600" : "text-slate-300 group-hover:text-rose-500"
+                        )}>
+                          {isSelected ? 'تم الاختيار' : 'صوّت ضده'}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
+
+                <button
+                  disabled={currentVoterSelections.length !== spyCount}
+                  onClick={confirmVote}
+                  className={cn(
+                    "w-full py-5 text-2xl mt-4 transition-all",
+                    currentVoterSelections.length === spyCount ? "btn-chunky btn-primary" : "btn-chunky bg-slate-200 text-slate-400 shadow-none opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  تأكيد التصويت
+                </button>
               </div>
             )}
           </motion.div>
