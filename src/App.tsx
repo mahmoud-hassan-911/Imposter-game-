@@ -72,6 +72,13 @@ export default function App() {
   const [isWordVisible, setIsWordVisible] = useState(false);
   const [winner, setWinner] = useState<'citizens' | 'spy' | null>(null);
 
+  // New Question & Voting State
+  const [questionPairs, setQuestionPairs] = useState<{asker: Player, answerer: Player}[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [votes, setVotes] = useState<Record<string, string>>({});
+  const [currentVoterIndex, setCurrentVoterIndex] = useState(0);
+  const [showVoterPrompt, setShowVoterPrompt] = useState(true);
+
   // Category Management State
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [newWordText, setNewWordText] = useState('');
@@ -145,18 +152,62 @@ export default function App() {
     setIsWordVisible(false);
   };
 
+  const startQuestionPhase = (currentPlayers: Player[]) => {
+    const active = currentPlayers.filter(p => !p.isEliminated);
+    const shuffled = [...active].sort(() => Math.random() - 0.5);
+    const pairs = shuffled.map((p, i) => ({
+      asker: p,
+      answerer: shuffled[(i + 1) % shuffled.length]
+    }));
+    setQuestionPairs(pairs);
+    setCurrentQuestionIndex(0);
+    setPhase('describe');
+  };
+
   const nextReveal = () => {
     if (revealIndex < players.length - 1) {
       setRevealIndex(revealIndex + 1);
       setIsWordVisible(false);
     } else {
-      setPhase('describe');
+      startQuestionPhase(players);
     }
   };
 
-  const handleVote = (votedPlayerId: string) => {
+  const handleCastVote = (suspectId: string) => {
+    const activePlayers = players.filter(p => !p.isEliminated);
+    const currentVoter = activePlayers[currentVoterIndex];
+    
+    const newVotes = { ...votes, [currentVoter.id]: suspectId };
+    setVotes(newVotes);
+
+    if (currentVoterIndex < activePlayers.length - 1) {
+      setCurrentVoterIndex(currentVoterIndex + 1);
+      setShowVoterPrompt(true);
+    } else {
+      resolveVotesInline(newVotes);
+    }
+  };
+
+  const resolveVotesInline = (finalVotes: Record<string, string>) => {
+    const tally: Record<string, number> = {};
+    Object.values(finalVotes).forEach(votedId => {
+      tally[votedId] = (tally[votedId] || 0) + 1;
+    });
+
+    let maxVotes = 0;
+    let eliminatedIds: string[] = [];
+
+    Object.entries(tally).forEach(([id, count]) => {
+      if (count > maxVotes) {
+        maxVotes = count;
+        eliminatedIds = [id];
+      } else if (count === maxVotes) {
+        eliminatedIds.push(id);
+      }
+    });
+
     const updatedPlayers = players.map(p => 
-      p.id === votedPlayerId ? { ...p, isEliminated: true } : p
+      eliminatedIds.includes(p.id) ? { ...p, isEliminated: true } : p
     );
     
     setPlayers(updatedPlayers);
@@ -176,7 +227,7 @@ export default function App() {
       setWinner('spy');
       setPhase('result');
     } else {
-      setPhase('describe');
+      startQuestionPhase(currentPlayers);
     }
   };
 
@@ -568,7 +619,7 @@ export default function App() {
           </motion.div>
         )}
 
-        {phase === 'describe' && (
+        {phase === 'describe' && questionPairs.length > 0 && (
           <motion.div
             key="describe"
             initial={{ opacity: 0 }}
@@ -576,35 +627,48 @@ export default function App() {
             className="w-full max-w-md space-y-8"
           >
             <div className="text-center space-y-3">
-              <h2 className="text-4xl font-black text-slate-900">وقت الوصف! 🗣️</h2>
-              <p className="text-slate-500 font-bold text-lg">كل واحد يقول كلمة واحدة بس توصف اللي معاه</p>
+              <h2 className="text-4xl font-black text-slate-900">وقت الأسئلة! 🗣️</h2>
+              <p className="text-slate-500 font-bold text-lg">اسألوا بعض عشان تكشفوا الجاسوس</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              {players.map((player) => (
-                <div
-                  key={player.id}
-                  className={cn(
-                    "card-chunky p-5 flex flex-col items-center gap-3 transition-all",
-                    player.isEliminated ? "opacity-40 grayscale scale-95 shadow-none" : ""
-                  )}
-                >
-                  <div className="w-16 h-16 rounded-[1.5rem] bg-indigo-50 flex items-center justify-center text-indigo-600">
+            <div className="card-chunky p-8 flex flex-col items-center gap-6 text-center">
+              <div className="flex items-center justify-center gap-4 w-full">
+                <div className="flex flex-col items-center gap-2 flex-1">
+                  <div className="w-16 h-16 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
                     <User size={32} strokeWidth={2.5} />
                   </div>
-                  <span className="font-black text-xl truncate w-full text-center text-slate-800">{player.name}</span>
-                  {player.isEliminated && (
-                    <span className="text-xs bg-rose-100 text-rose-600 px-3 py-1 rounded-xl font-black uppercase">بره اللعبة</span>
-                  )}
+                  <span className="font-black text-xl text-slate-800">{questionPairs[currentQuestionIndex].asker.name}</span>
+                  <span className="text-sm font-bold text-slate-400">يسأل</span>
                 </div>
-              ))}
+                
+                <div className="text-slate-300">
+                  <ChevronLeft size={40} strokeWidth={3} />
+                </div>
+
+                <div className="flex flex-col items-center gap-2 flex-1">
+                  <div className="w-16 h-16 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center">
+                    <User size={32} strokeWidth={2.5} />
+                  </div>
+                  <span className="font-black text-xl text-slate-800">{questionPairs[currentQuestionIndex].answerer.name}</span>
+                  <span className="text-sm font-bold text-slate-400">يُسأل</span>
+                </div>
+              </div>
             </div>
 
             <button
-              onClick={() => setPhase('vote')}
+              onClick={() => {
+                if (currentQuestionIndex < questionPairs.length - 1) {
+                  setCurrentQuestionIndex(currentQuestionIndex + 1);
+                } else {
+                  setPhase('vote');
+                  setVotes({});
+                  setCurrentVoterIndex(0);
+                  setShowVoterPrompt(true);
+                }
+              }}
               className="btn-chunky btn-primary w-full py-5 text-2xl"
             >
-              خلصنا وصف؟ يلا نصوت! 🗳️
+              {currentQuestionIndex < questionPairs.length - 1 ? 'السؤال اللي بعده' : 'خلصنا؟ يلا نصوت! 🗳️'}
             </button>
           </motion.div>
         )}
@@ -616,35 +680,50 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="w-full max-w-md space-y-8"
           >
-            <div className="text-center space-y-3">
-              <h2 className="text-4xl font-black text-slate-900">مين الجاسوس؟ 🤔</h2>
-              <p className="text-slate-500 font-bold text-lg">اتفقوا على واحد شاكين فيه واطردوه!</p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              {players.filter(p => !p.isEliminated).map((player) => (
-                <button
-                  key={player.id}
-                  onClick={() => handleVote(player.id)}
-                  className="card-chunky p-6 flex items-center justify-between group hover:border-rose-300 transition-all text-right active:scale-[0.98] cursor-pointer"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-[1.2rem] bg-slate-50 flex items-center justify-center group-hover:bg-rose-100 transition-colors">
-                      <AlertCircle size={28} className="text-slate-400 group-hover:text-rose-500 transition-colors" strokeWidth={2.5} />
-                    </div>
-                    <span className="text-2xl font-black text-slate-800">{player.name}</span>
+            {showVoterPrompt ? (
+              <div className="text-center space-y-8">
+                <div className="space-y-3">
+                  <h2 className="text-4xl font-black text-slate-900">دور <span className="text-indigo-600">{players.filter(p => !p.isEliminated)[currentVoterIndex]?.name}</span></h2>
+                  <p className="text-slate-500 font-bold text-lg">ادي الموبايل لـ {players.filter(p => !p.isEliminated)[currentVoterIndex]?.name} عشان يصوت في السر</p>
+                </div>
+                <div className="card-chunky p-8 flex justify-center border-4 border-dashed border-indigo-200">
+                  <div className="w-24 h-24 rounded-[2rem] bg-indigo-50 flex items-center justify-center">
+                    <EyeOff size={48} className="text-indigo-400" strokeWidth={2.5} />
                   </div>
-                  <div className="text-slate-300 group-hover:text-rose-500 font-black text-lg">اطرد ده!</div>
+                </div>
+                <button
+                  onClick={() => setShowVoterPrompt(false)}
+                  className="btn-chunky btn-primary w-full py-5 text-2xl"
+                >
+                  أنا {players.filter(p => !p.isEliminated)[currentVoterIndex]?.name}
                 </button>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="text-center space-y-3">
+                  <h2 className="text-3xl font-black text-slate-900">شاكك في مين؟ 🤔</h2>
+                  <p className="text-slate-500 font-bold">اختار اللاعب اللي حاسس إنه الجاسوس</p>
+                </div>
 
-            <button
-              onClick={() => setPhase('describe')}
-              className="w-full py-4 text-slate-400 hover:text-indigo-600 font-black text-lg transition-colors"
-            >
-              لسه مش متأكدين؟ كملوا وصف
-            </button>
+                <div className="grid grid-cols-1 gap-3">
+                  {players.filter(p => !p.isEliminated && p.id !== players.filter(active => !active.isEliminated)[currentVoterIndex]?.id).map((player) => (
+                    <button
+                      key={player.id}
+                      onClick={() => handleCastVote(player.id)}
+                      className="card-chunky p-5 flex items-center justify-between group hover:border-rose-300 transition-all text-right active:scale-[0.98] cursor-pointer"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center group-hover:bg-rose-100 transition-colors">
+                          <AlertCircle size={24} className="text-slate-400 group-hover:text-rose-500 transition-colors" strokeWidth={2.5} />
+                        </div>
+                        <span className="text-xl font-black text-slate-800">{player.name}</span>
+                      </div>
+                      <div className="text-slate-300 group-hover:text-rose-500 font-black">صوّت ضده</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
 
