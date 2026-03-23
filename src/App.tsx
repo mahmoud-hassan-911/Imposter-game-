@@ -21,7 +21,17 @@ import {
   ChevronLeft,
   Ghost,
   Check,
-  Minus
+  Minus,
+  Tags,
+  Rocket,
+  MessageCircle,
+  CheckSquare,
+  HelpCircle,
+  Search,
+  XCircle,
+  Skull,
+  ArrowRight,
+  PartyPopper
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { clsx, type ClassValue } from 'clsx';
@@ -63,7 +73,13 @@ export default function App() {
     return DEFAULT_CATEGORIES;
   });
 
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<Player[]>(() => {
+    try {
+      const saved = localStorage.getItem('spy_players');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
   const [newPlayerName, setNewPlayerName] = useState('');
   const [phase, setPhase] = useState<GamePhase>('setup');
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
@@ -114,6 +130,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('spy_punishments', JSON.stringify(punishments));
   }, [punishments]);
+
+  useEffect(() => {
+    localStorage.setItem('spy_players', JSON.stringify(players));
+  }, [players]);
 
   useEffect(() => {
     const maxSpies = Math.max(1, Math.floor(players.length / 3));
@@ -173,7 +193,7 @@ export default function App() {
       return { 
         ...p, 
         role: isSpy ? 'spy' : 'citizen', 
-        word: isSpy ? 'أنت الجاسوس 🕵️‍♂️' : wordObj.text,
+        word: isSpy ? 'أنت الجاسوس' : wordObj.text,
         isEliminated: false 
       };
     });
@@ -388,13 +408,12 @@ export default function App() {
           >
             <div className="text-center space-y-2">
               <motion.div 
-                className="inline-block p-4 bg-indigo-100 text-indigo-600 rounded-[2rem] mb-2 shadow-sm"
-                animate={{ rotate: [0, 10, -10, 0] }}
-                transition={{ duration: 4, repeat: Infinity }}
+                className="inline-block mb-2"
+                animate={{ rotate: [0, 5, -5, 0] }}
+                transition={{ duration: 6, repeat: Infinity }}
               >
-                <Ghost size={56} strokeWidth={2.5} />
+                <img src="/logo.png" alt="الجاسوس" className="w-64 h-auto mx-auto drop-shadow-2xl" />
               </motion.div>
-              <h1 className="text-5xl font-black text-slate-900 tracking-tight">مين الجاسوس؟</h1>
               <p className="text-slate-500 font-bold text-lg">لعبة الأصحاب واللمة الحلوة</p>
             </div>
 
@@ -498,7 +517,9 @@ export default function App() {
               <button onClick={() => setPhase('setup')} className="btn-chunky btn-secondary p-3">
                 <ChevronLeft size={24} strokeWidth={3} />
               </button>
-              <h2 className="text-3xl font-black text-slate-900">اختار التصنيفات 🏷️</h2>
+              <h2 className="text-3xl font-black text-slate-900 flex items-center justify-center gap-2">
+                اختار التصنيفات <Tags className="text-indigo-500" size={32} />
+              </h2>
             </div>
 
             <div className="grid grid-cols-1 gap-4">
@@ -540,7 +561,7 @@ export default function App() {
                     selectedCategoryIds.length > 0 ? "btn-chunky btn-primary" : "btn-chunky bg-slate-200 text-slate-400 shadow-none opacity-50 cursor-not-allowed"
                   )}
                 >
-                  يلا نبدأ! 🚀
+                  <span className="flex items-center justify-center gap-2">يلا نبدأ! <Rocket size={24} /></span>
                 </button>
               </div>
             </div>
@@ -559,7 +580,7 @@ export default function App() {
                 <button onClick={() => { setPhase('setup'); setEditingCategory(null); }} className="btn-chunky btn-secondary p-3">
                   <ChevronLeft size={24} strokeWidth={3} />
                 </button>
-                <h2 className="text-2xl font-black text-slate-900">الإعدادات ⚙️</h2>
+                <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">الإعدادات <Settings className="text-slate-500" size={24} /></h2>
               </div>
               {settingsTab === 'categories' && !editingCategory && (
                 <button onClick={addNewCategory} className="btn-chunky btn-primary px-4 py-2 text-sm">
@@ -652,16 +673,19 @@ export default function App() {
 
                 {settingsTab === 'punishments' && (
                   <div className="space-y-3">
-                    <div className="flex gap-2 mb-4">
+                    <div className="relative flex items-center mb-4">
                       <input 
                         placeholder="ضيف حكم جديد..."
                         value={newPunishmentText}
                         onChange={(e) => setNewPunishmentText(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && addPunishment()}
-                        className="input-chunky flex-1 text-base py-2"
+                        className="input-chunky w-full pr-4 pl-14 py-3 text-base"
                       />
-                      <button onClick={addPunishment} className="btn-chunky btn-primary px-4">
-                        <Plus size={20} strokeWidth={3} />
+                      <button 
+                        onClick={addPunishment} 
+                        className="absolute left-2 w-10 h-10 bg-indigo-500 text-white rounded-xl flex items-center justify-center hover:bg-indigo-400 active:scale-95 transition-all shadow-sm"
+                      >
+                        <Plus size={24} strokeWidth={3} />
                       </button>
                     </div>
                     {punishments.map(p => (
@@ -699,16 +723,19 @@ export default function App() {
                 <div className="space-y-4">
                   <label className="text-sm font-black text-slate-400 uppercase">الكلمات</label>
                   
-                  <div className="flex gap-2">
+                  <div className="relative flex items-center mb-4">
                     <input 
                       placeholder="ضيف كلمة جديدة..."
                       value={newWordText}
                       onChange={(e) => setNewWordText(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && addWord()}
-                      className="input-chunky flex-1 text-base py-2"
+                      className="input-chunky w-full pr-4 pl-14 py-3 text-base"
                     />
-                    <button onClick={addWord} className="btn-chunky btn-primary px-4">
-                      <Plus size={20} strokeWidth={3} />
+                    <button 
+                      onClick={addWord} 
+                      className="absolute left-2 w-10 h-10 bg-indigo-500 text-white rounded-xl flex items-center justify-center hover:bg-indigo-400 active:scale-95 transition-all shadow-sm"
+                    >
+                      <Plus size={24} strokeWidth={3} />
                     </button>
                   </div>
                   
@@ -811,7 +838,7 @@ export default function App() {
             {discussionMode === 'directed' && questionPairs.length > 0 ? (
               <>
                 <div className="text-center space-y-3">
-                  <h2 className="text-4xl font-black text-slate-900">وقت الأسئلة! 🗣️</h2>
+                  <h2 className="text-4xl font-black text-slate-900 flex items-center justify-center gap-2">وقت الأسئلة! <MessageCircle className="text-indigo-500" size={36} /></h2>
                   <p className="text-slate-500 font-bold text-lg">اسألوا بعض عشان تكشفوا الجواسيس</p>
                 </div>
 
@@ -853,13 +880,13 @@ export default function App() {
                   }}
                   className="btn-chunky btn-primary w-full py-5 text-2xl"
                 >
-                  {currentQuestionIndex < questionPairs.length - 1 ? 'السؤال اللي بعده' : 'خلصنا؟ يلا نصوت! 🗳️'}
+                  {currentQuestionIndex < questionPairs.length - 1 ? 'السؤال اللي بعده' : <span className="flex items-center justify-center gap-2">خلصنا؟ يلا نصوت! <CheckSquare size={24} /></span>}
                 </button>
               </>
             ) : (
               <>
                 <div className="text-center space-y-3">
-                  <h2 className="text-4xl font-black text-slate-900">نقاش مفتوح! 🗣️</h2>
+                  <h2 className="text-4xl font-black text-slate-900 flex items-center justify-center gap-2">نقاش مفتوح! <MessageCircle className="text-indigo-500" size={36} /></h2>
                   <p className="text-slate-500 font-bold text-lg">اتكلموا مع بعض وحاولوا تكتشفوا الجواسيس</p>
                 </div>
 
@@ -887,7 +914,7 @@ export default function App() {
                   }}
                   className="btn-chunky btn-primary w-full py-5 text-2xl"
                 >
-                  خلصنا نقاش؟ يلا نصوت! 🗳️
+                  <span className="flex items-center justify-center gap-2">خلصنا نقاش؟ يلا نصوت! <CheckSquare size={24} /></span>
                 </button>
               </>
             )}
@@ -922,7 +949,7 @@ export default function App() {
             ) : (
               <div className="space-y-6">
                 <div className="text-center space-y-3">
-                  <h2 className="text-3xl font-black text-slate-900">شاكك في مين؟ 🤔</h2>
+                  <h2 className="text-3xl font-black text-slate-900 flex items-center justify-center gap-2">شاكك في مين؟ <HelpCircle className="text-indigo-500" size={32} /></h2>
                   <p className="text-slate-500 font-bold">اختار {spyCount} لاعبين حاسس إنهم جواسيس</p>
                   <p className="text-indigo-500 font-black text-sm bg-indigo-50 inline-block px-4 py-1 rounded-full">
                     اخترت {currentVoterSelections.length} من {spyCount}
@@ -984,7 +1011,7 @@ export default function App() {
             className="w-full max-w-md space-y-8"
           >
             <div className="text-center space-y-4">
-              <h2 className="text-4xl font-black text-slate-900">انتهى التصويت! 🗳️</h2>
+              <h2 className="text-4xl font-black text-slate-900 flex items-center justify-center gap-2">انتهى التصويت! <CheckSquare className="text-indigo-500" size={36} /></h2>
               <p className="text-xl text-slate-500 font-bold leading-relaxed">
                 اللاعبين اختاروا: {accusedPlayers.length > 0 ? accusedPlayers.map(p => p.name).join(' و ') : 'محدش'}
               </p>
@@ -1013,7 +1040,7 @@ export default function App() {
               }}
               className="btn-chunky btn-primary w-full py-5 text-2xl"
             >
-              الجواسيس يخمنوا الكلمة 🕵️‍♂️
+              <span className="flex items-center justify-center gap-2">الجواسيس يخمنوا الكلمة <Search size={24} /></span>
             </button>
           </motion.div>
         )}
@@ -1033,7 +1060,7 @@ export default function App() {
               >
                 <Ghost size={64} strokeWidth={2.5} />
               </motion.div>
-              <h2 className="text-4xl font-black text-slate-900">دور الجاسوس! 🕵️‍♂️</h2>
+              <h2 className="text-4xl font-black text-slate-900 flex items-center justify-center gap-2">دور الجاسوس! <Search className="text-indigo-500" size={36} /></h2>
               <p className="text-xl text-slate-500 font-bold leading-relaxed">
                 يا <span className="text-rose-600">{guessingSpy?.name}</span>، قدامك فرصة أخيرة.. إيه هي الكلمة؟
               </p>
@@ -1068,7 +1095,7 @@ export default function App() {
               >
                 <AlertCircle size={80} strokeWidth={2.5} />
               </motion.div>
-              <h2 className="text-5xl font-black text-slate-900 leading-tight">إجابة غلط! ❌</h2>
+              <h2 className="text-5xl font-black text-slate-900 leading-tight flex items-center justify-center gap-2">إجابة غلط! <XCircle className="text-rose-500" size={48} /></h2>
               <p className="text-xl text-slate-500 font-bold">
                 الجاسوس معرفش الكلمة.. وقت العقاب!
               </p>
@@ -1087,7 +1114,7 @@ export default function App() {
                     اللاعبين هيختاروا الحكم بالأغلبية!
                   </div>
                   <div className="text-slate-500 font-bold">
-                    اتفقوا على حكم ونفذوه في الجاسوس 😈
+                    <span className="flex items-center justify-center gap-2">اتفقوا على حكم ونفذوه في الجاسوس <Skull size={20} /></span>
                   </div>
                 </div>
               )}
@@ -1114,7 +1141,7 @@ export default function App() {
               }}
               className="btn-chunky btn-primary w-full py-5 text-2xl"
             >
-              {spiesToGuess.length > 0 ? 'الجاسوس اللي بعده ➡️' : 'النتيجة النهائية 🏆'}
+              {spiesToGuess.length > 0 ? <span className="flex items-center justify-center gap-2">الجاسوس اللي بعده <ArrowRight size={24} /></span> : <span className="flex items-center justify-center gap-2">النتيجة النهائية <Trophy size={24} /></span>}
             </button>
           </motion.div>
         )}
@@ -1135,7 +1162,7 @@ export default function App() {
                 <Trophy size={80} strokeWidth={2} />
               </motion.div>
               <h2 className="text-5xl font-black text-slate-900 leading-tight">
-                {winner === 'citizens' ? 'المواطنين كسبوا! 🎉' : (spyCount > 1 ? 'الجواسيس خلعوا! 🕵️‍♂️' : 'الجاسوس خلع! 🕵️‍♂️')}
+                {winner === 'citizens' ? <span className="flex items-center justify-center gap-2">المواطنين كسبوا! <PartyPopper size={40} className="text-amber-500" /></span> : (spyCount > 1 ? <span className="flex items-center justify-center gap-2">الجواسيس خلعوا! <Search size={40} className="text-slate-700" /></span> : <span className="flex items-center justify-center gap-2">الجاسوس خلع! <Search size={40} className="text-slate-700" /></span>)}
               </h2>
               <p className="text-xl text-slate-500 font-bold">
                 {winner === 'citizens' 
