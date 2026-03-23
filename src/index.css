@@ -1,0 +1,55 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap');
+
+@theme {
+  --font-sans: "Cairo", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  @apply bg-amber-50 text-slate-900 min-h-screen overflow-x-hidden selection:bg-indigo-200;
+  background-image: radial-gradient(#cbd5e1 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+}
+
+.btn-chunky {
+  @apply relative transition-all active:translate-y-1 active:shadow-none font-black rounded-2xl flex items-center justify-center gap-2;
+}
+
+.btn-primary {
+  @apply bg-indigo-500 text-white shadow-[0_6px_0_0_#4338ca] hover:bg-indigo-400;
+}
+
+.btn-danger {
+  @apply bg-rose-500 text-white shadow-[0_6px_0_0_#be123c] hover:bg-rose-400;
+}
+
+.btn-success {
+  @apply bg-emerald-500 text-white shadow-[0_6px_0_0_#047857] hover:bg-emerald-400;
+}
+
+.btn-secondary {
+  @apply bg-white text-slate-700 shadow-[0_6px_0_0_#cbd5e1] border-2 border-slate-200 hover:bg-slate-50;
+}
+
+.card-chunky {
+  @apply bg-white rounded-3xl border-2 border-slate-200 shadow-[0_8px_0_0_#cbd5e1] p-6;
+}
+
+.input-chunky {
+  @apply bg-slate-50 border-2 border-slate-200 rounded-2xl px-4 py-3 font-bold text-lg focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 transition-all;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 rounded-full hover:bg-slate-400;
+}
+
+.dir-rtl {
+  direction: rtl;
+}
