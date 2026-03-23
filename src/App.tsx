@@ -102,6 +102,8 @@ export default function App() {
   const [spyGuessOptions, setSpyGuessOptions] = useState<Word[]>([]);
   const [selectedPunishment, setSelectedPunishment] = useState<Punishment | null>(null);
   const [guessingSpy, setGuessingSpy] = useState<Player | null>(null);
+  const [spiesToGuess, setSpiesToGuess] = useState<Player[]>([]);
+  const [accusedPlayers, setAccusedPlayers] = useState<Player[]>([]);
   const [settingsTab, setSettingsTab] = useState<'categories' | 'punishments'>('categories');
   const [newPunishmentText, setNewPunishmentText] = useState('');
 
@@ -246,47 +248,32 @@ export default function App() {
       .filter(([id, count]) => count >= thresholdVoteCount)
       .map(([id]) => id);
 
-    const updatedPlayers = players.map(p => 
-      eliminatedIds.includes(p.id) ? { ...p, isEliminated: true } : p
-    );
+    const accused = players.filter(p => eliminatedIds.includes(p.id));
+    setAccusedPlayers(accused);
     
-    setPlayers(updatedPlayers);
-    checkGameStatus(updatedPlayers);
-  };
-
-  const checkGameStatus = (currentPlayers: Player[]) => {
-    const activePlayers = currentPlayers.filter(p => !p.isEliminated);
-    const activeSpies = activePlayers.filter(p => p.role === 'spy');
-    const activeCitizens = activePlayers.filter(p => p.role === 'citizen');
-
-    if (activeSpies.length === 0) {
-      // Citizens caught the spy! Now spy gets a chance to guess the word.
-      const eliminatedSpies = currentPlayers.filter(p => p.role === 'spy' && p.isEliminated);
-      if (eliminatedSpies.length > 0) {
-        startSpyGuessPhase(eliminatedSpies[0]);
-      } else {
-        setWinner('citizens');
-        setPhase('result');
-        playSuccess();
-        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-      }
-    } else if (activeSpies.length >= activeCitizens.length) {
-      setWinner('spy');
-      setPhase('result');
-      playFail();
-    } else {
-      if (discussionMode === 'directed') {
-        startQuestionPhase(currentPlayers);
-      } else {
-        setPhase('describe');
-      }
-    }
+    const allSpies = players.filter(p => p.role === 'spy');
+    setSpiesToGuess(allSpies);
+    
+    setPhase('reveal-spies');
   };
 
   const resetGame = () => {
     setPhase('setup');
     setWinner(null);
     setPlayers(players.map(p => ({ ...p, isEliminated: false })));
+    setAccusedPlayers([]);
+    setSpiesToGuess([]);
+    setCurrentWord(null);
+    setRevealIndex(0);
+    setIsWordVisible(false);
+    setQuestionPairs([]);
+    setCurrentQuestionIndex(0);
+    setVotes({});
+    setCurrentVoterSelections([]);
+    setCurrentVoterIndex(0);
+    setShowVoterPrompt(true);
+    setGuessingSpy(null);
+    setSelectedPunishment(null);
   };
 
   // Category Management Logic
@@ -367,6 +354,7 @@ export default function App() {
   };
 
   const handleSpyGuess = (wordId: string) => {
+    setSpiesToGuess(prev => prev.filter(s => s.id !== guessingSpy?.id));
     if (wordId === currentWord?.id) {
       playFail(); // Spy wins
       setWinner('spy');
@@ -377,7 +365,7 @@ export default function App() {
   };
 
   const startPunishmentPhase = () => {
-    if (punishmentMode === 'random') {
+    if (punishmentMode === 'random' && punishments.length > 0) {
       const randomPunishment = punishments[Math.floor(Math.random() * punishments.length)];
       setSelectedPunishment(randomPunishment);
     } else {
@@ -988,6 +976,48 @@ export default function App() {
           </motion.div>
         )}
 
+        {phase === 'reveal-spies' && (
+          <motion.div
+            key="reveal-spies"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md space-y-8"
+          >
+            <div className="text-center space-y-4">
+              <h2 className="text-4xl font-black text-slate-900">انتهى التصويت! 🗳️</h2>
+              <p className="text-xl text-slate-500 font-bold leading-relaxed">
+                اللاعبين اختاروا: {accusedPlayers.length > 0 ? accusedPlayers.map(p => p.name).join(' و ') : 'محدش'}
+              </p>
+            </div>
+
+            <div className="card-chunky p-6 space-y-6 bg-rose-50 border-rose-200">
+              <h3 className="text-2xl font-black text-rose-600 text-center">الجواسيس الحقيقيين هما:</h3>
+              <div className="flex flex-wrap gap-3 justify-center">
+                {players.filter(p => p.role === 'spy').map(spy => (
+                  <span key={spy.id} className="px-4 py-2 bg-rose-500 text-white rounded-xl font-black text-xl">
+                    {spy.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                const nextSpy = spiesToGuess[0];
+                if (nextSpy) {
+                  startSpyGuessPhase(nextSpy);
+                } else {
+                  setWinner('citizens');
+                  setPhase('result');
+                }
+              }}
+              className="btn-chunky btn-primary w-full py-5 text-2xl"
+            >
+              الجواسيس يخمنوا الكلمة 🕵️‍♂️
+            </button>
+          </motion.div>
+        )}
+
         {phase === 'spy-guess' && (
           <motion.div
             key="spy-guess"
@@ -1003,7 +1033,7 @@ export default function App() {
               >
                 <Ghost size={64} strokeWidth={2.5} />
               </motion.div>
-              <h2 className="text-4xl font-black text-slate-900">الجاسوس اتكشف! 🕵️‍♂️</h2>
+              <h2 className="text-4xl font-black text-slate-900">دور الجاسوس! 🕵️‍♂️</h2>
               <p className="text-xl text-slate-500 font-bold leading-relaxed">
                 يا <span className="text-rose-600">{guessingSpy?.name}</span>، قدامك فرصة أخيرة.. إيه هي الكلمة؟
               </p>
@@ -1065,14 +1095,26 @@ export default function App() {
 
             <button
               onClick={() => {
-                setWinner('citizens');
-                setPhase('result');
-                playSuccess();
-                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                if (spiesToGuess.length > 0) {
+                  startSpyGuessPhase(spiesToGuess[0]);
+                } else {
+                  const accusedSpies = accusedPlayers.filter(p => p.role === 'spy');
+                  const citizensWon = accusedSpies.length === spyCount && accusedPlayers.length === spyCount;
+                  
+                  if (citizensWon) {
+                    setWinner('citizens');
+                    playSuccess();
+                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                  } else {
+                    setWinner('spy');
+                    playFail();
+                  }
+                  setPhase('result');
+                }
               }}
               className="btn-chunky btn-primary w-full py-5 text-2xl"
             >
-              النتيجة النهائية 🏆
+              {spiesToGuess.length > 0 ? 'الجاسوس اللي بعده ➡️' : 'النتيجة النهائية 🏆'}
             </button>
           </motion.div>
         )}

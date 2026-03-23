@@ -6,7 +6,7 @@ export interface Player {
   isEliminated: boolean;
 }
 
-export type GamePhase = 'setup' | 'category-select' | 'role-reveal' | 'describe' | 'vote' | 'spy-guess' | 'punishment' | 'result' | 'manage-categories';
+export type GamePhase = 'setup' | 'category-select' | 'role-reveal' | 'describe' | 'vote' | 'reveal-spies' | 'spy-guess' | 'punishment' | 'result' | 'manage-categories';
 
 export interface Word {
   id: string;
